@@ -42,6 +42,7 @@
 /*                Based on find_field_value.sqr and fafv.sql                 */
 /*   09/26/2016 - Ted Lewis - Modify with option to return detail value data */
 /*   09/28/2016 - Ted Lewis - Fix handling of long columns                   */
+/*   04/06/2017 - Ted Lewis - Add option for returning only key fields       */
 /*                                                                           */
 /* ***************************************************************************/
 
@@ -77,6 +78,7 @@ PROMPT
 ACCEPT i_fieldnamein   CHAR    PROMPT "Enter Field Name to Search:  "
 ACCEPT i_fieldtypein   CHAR  DEFAULT "999" PROMPT "Enter Field Type:  "
 ACCEPT i_fieldvaluein  CHAR    PROMPT "Enter Value to Find:  "
+ACCEPT i_fieldkeyin    CHAR  DEFAULT "N"  PROMPT "Only Key Fields? (Y/N):  "
 ACCEPT i_detailyesnoin CHAR  DEFAULT "N"  PROMPT "Return Detail Values? (Y/N):  " 
 PROMPT     
 
@@ -103,9 +105,11 @@ o_rowcount      integer;
 fieldnamein     varchar(60);
 fieldtypein     varchar(4);
 fieldvaluein    varchar(500);
+fieldkeyin      varchar(1);
 detailyesnoin   varchar(1);
 
 str_recselect   VARCHAR2(1000);
+str_keyonly     VARCHAR2(250);
 str_dtlqry      VARCHAR2(500);
 
 err_num         NUMBER;
@@ -179,11 +183,13 @@ BEGIN
   fieldnamein   := '&&i_fieldnamein';
   fieldtypein   := '&&i_fieldtypein';
   fieldvaluein  := '&&i_fieldvaluein';
+  fieldkeyin    := '&&i_fieldkeyin';
   detailyesnoin := '&&i_detailyesnoin';
   
   fieldnamein   := upper(fieldnamein);
   fieldtypein   := upper(fieldtypein);
   fieldvaluein  := upper(fieldvaluein);
+  fieldkeyin    := upper(fieldkeyin);
   detailyesnoin := upper(detailyesnoin);
   
   IF fieldnamein IS NULL THEN
@@ -195,6 +201,9 @@ BEGIN
   IF fieldvaluein IS NULL THEN
     fieldvaluein := '%';
   END IF;
+  IF fieldkeyin IS NULL OR fieldkeyin <> 'Y' THEN
+    fieldkeyin := 'N';
+  END IF;
   IF detailyesnoin IS NULL OR detailyesnoin <> 'Y' THEN
     detailyesnoin := 'N';
   END IF;
@@ -203,6 +212,7 @@ BEGIN
   dbms_output.put_line('Field Name Search = ' || fieldnamein);
   dbms_output.put_line('Field Type Search = ' || fieldtypein);
   dbms_output.put_line('Field Value Search = ' || fieldvaluein);
+  dbms_output.put_line('Only Key Fields = ' || fieldvaluein);
   dbms_output.put_line('Output Detail Values = ' || detailyesnoin);
   -- the detail processing procedures cannot handle long colums due to group by, issue warning
   IF detailyesnoin = 'Y' AND (fieldtypein = '1' OR fieldtypein = '%') THEN
@@ -217,6 +227,13 @@ BEGIN
   
   n_recproc := 0;  -- global variable for counting number of records attempted
   n_recfound := 0;  -- global variable for counting number of hits found in the records
+  
+  -- if only returning key fields then build clause for that
+  IF fieldkeyin = 'Y' THEN
+    str_keyonly := 'AND bitand(RF.USEEDIT, 1) > 0';
+  ELSE
+    str_keyonly := ' ';
+  END IF;
   
   -- BUILD THE QUERY TO SELECT ALL RECORDS THAT CONTAIN THE FIELD(S) TO SEARCH
   str_recselect := 
@@ -233,8 +250,9 @@ BEGIN
        AND F.FIELDTYPE LIKE :fieldtypein
        AND F.FIELDTYPE <> 8  -- exclue IMAGE fields which are binary BLOB
        AND (((F.LENGTH + F.DECIMALPOS + 2) >= length(:fieldvaluein)) 
-            OR (F.LENGTH = 0))
-       AND RD.RECNAME NOT IN (''HR_ACCTG_LINE'',''VCHR_ACCTG_LINE'')  -- *** exclude certain records as required ***
+            OR (F.LENGTH = 0))'
+       || str_keyonly ||
+       'AND RD.RECNAME NOT IN (''HR_ACCTG_LINE'',''VCHR_ACCTG_LINE'')  -- *** exclude certain records as required ***
        ORDER BY RF.RECNAME, RF.FIELDNAME';    
 
   OPEN c_recselect FOR str_recselect USING fieldnamein, fieldtypein, fieldvaluein;   
