@@ -1,5 +1,5 @@
 /* ***************************************************************************/
-/* FINDFIELDVALUE.SQL                                                    */
+/* FINDFIELDVALUE.SQL                                                        */
 /* Date: 7/27/2016                                                           */
 /* Developer: Ted Lewis                                                      */
 /* ------------------------------------------------------------------------- */
@@ -111,6 +111,7 @@ detailyesnoin   varchar(1);
 str_recselect   VARCHAR2(1000);
 str_keyonly     VARCHAR2(250);
 str_dtlqry      VARCHAR2(500);
+str_exclclause  VARCHAR2(500);
 
 err_num         NUMBER;
 err_msg         VARCHAR2(256); 
@@ -208,6 +209,17 @@ BEGIN
     detailyesnoin := 'N';
   END IF;
   
+    -- if only returning key fields then build clause for that
+  IF fieldkeyin = 'Y' THEN
+    str_keyonly := 'AND bitand(RF.USEEDIT, 1) > 0';
+  ELSE
+    str_keyonly := ' ';
+  END IF;
+  
+  -- additional SQL clauses can be added as needed, for example exclude certain records from searching
+  str_exclclause := 'AND RD.RECNAME NOT IN (''HR_ACCTG_LINE'',''VCHR_ACCTG_LINE'') ';
+  
+  
   -- output search parameterss
   dbms_output.put_line('Field Name Search = ' || fieldnamein);
   dbms_output.put_line('Field Type Search = ' || fieldtypein);
@@ -228,13 +240,6 @@ BEGIN
   n_recproc := 0;  -- global variable for counting number of records attempted
   n_recfound := 0;  -- global variable for counting number of hits found in the records
   
-  -- if only returning key fields then build clause for that
-  IF fieldkeyin = 'Y' THEN
-    str_keyonly := 'AND bitand(RF.USEEDIT, 1) > 0';
-  ELSE
-    str_keyonly := ' ';
-  END IF;
-  
   -- BUILD THE QUERY TO SELECT ALL RECORDS THAT CONTAIN THE FIELD(S) TO SEARCH
   str_recselect := 
       'SELECT 
@@ -251,9 +256,9 @@ BEGIN
        AND F.FIELDTYPE <> 8  -- exclue IMAGE fields which are binary BLOB
        AND (((F.LENGTH + F.DECIMALPOS + 2) >= length(:fieldvaluein)) 
             OR (F.LENGTH = 0))'
-       || str_keyonly ||
-       'AND RD.RECNAME NOT IN (''HR_ACCTG_LINE'',''VCHR_ACCTG_LINE'')  -- *** exclude certain records as required ***
-       ORDER BY RF.RECNAME, RF.FIELDNAME';    
+       || str_keyonly 
+       || str_exclclause ||
+       ' ORDER BY RF.RECNAME, RF.FIELDNAME';    
 
   OPEN c_recselect FOR str_recselect USING fieldnamein, fieldtypein, fieldvaluein;   
   LOOP
