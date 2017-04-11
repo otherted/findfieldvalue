@@ -1,0 +1,300 @@
+!************************************************************************
+! FIND_FIELD_VALUE.SQR                                                  *
+!************************************************************************
+!                                                                       *
+!************************************************************************
+!************************************************************************
+! Date:        02-April-2009                                            *
+! Developer:   Ted Lewis                                                *
+! Description: Enter a field name and value to get the tables that      *
+!              contain that field and value.  Oracle wildcard matching  *
+!              characters can be used.  Enter the field type to prevent *
+!              invalid data type errors when using wildcards in field   *
+!              name.                                                    *
+!                                                                       *
+! Output: A CSV file is created in the C:\TEMP\ directory.              *
+!                                                                       *
+! Input:                                                                *
+!   FieldName: Can use wildcard % for loose-matching.                   *
+!   FieldType:                                                          *
+!     0 = Character                                                     *
+!     1 = *Long Character                                               *
+!     2 = Number                                                        *
+!     3 = Signed Number                                                 *
+!     4 = *Date                                                         *
+!   FieldValue: Value to search for. Can use wildcard.                  *
+!                                                                       *
+! This version of the program returns the fields containing the search  *
+! value and a count of rows. The count does not give the actual values  *
+! found matching the criteria, nor does it group by those distinct      *
+! variations of the search value.                                       *
+!                                                                       *
+!************************************************************************
+
+#include 'setenv.sqc'    !Set environment
+#include 'setup01.sqc'   !Printer and page-size initialization
+
+
+!************************************************************************
+begin-setup
+!************************************************************************
+
+! ORACLE specific, modify session to run against SYSADM tables
+!BEGIN-SQL 
+!ALTER SESSION SET CURRENT_SCHEMA = "SYSADM";
+!END-SQL
+
+end-setup
+
+
+!************************************************************************
+begin-program
+!************************************************************************
+
+  do 1000-Init-Report
+  do 2000-Process-Main
+  do 9999-Terminate
+
+end-program
+
+
+!************************************************************************
+begin-heading 5
+!************************************************************************
+  
+  #include 'stdhdg01.sqc'
+  print 'Record Name'      (+1,1) bold
+  print 'Field Name'       (,25)  bold
+  
+end-heading
+
+
+!************************************************************************
+begin-procedure 1000-Init-Report
+!************************************************************************
+  #debug show '--> 1000-Init-Report' 
+  
+  !do Init-DateTime
+  !do Init-Number
+  !do Get-Current-DateTime
+  !do Stdapi-Init
+  do 8000-Get-Dbname
+  
+  move 'FIND_FIELD_VALUE.SQR'   to $ReportID
+  move 'Find Field Values' to $ReportTitle
+  let $ReportDate = edit($current-date,'mm/dd/yyyy')
+  let $ReportTime = edit($current-date,'HH24:MI:SS')
+  
+  show ' '
+  show $ReportID 
+  show 'Started at: ' $ReportDate ' ' $ReportTime
+  show 'Database: ' $Dbname
+  show ' '
+  
+  let $OUTPUT_FILE = 'C:\TEMP\FFV_OUTPUT_' || $Dbname || '_' || edit($current-date, 'yyyymmddhh24miss') || '.CSV'
+  open $OUTPUT_FILE as 10 for-writing record=5000 status=#status
+  
+  if #status != 0
+    show 'ERROR: file not opened'
+    stop
+  else
+    show 'Output File = ' $OUTPUT_FILE
+  end-if
+  show ' '
+  
+  write 10 from '"FIND_FIELD_VALUE.SQR","' $dbname '"' 
+  write 10 from '"Record Name","Field Name 1","Field Name 2","Value","Count"'
+  
+  if $prcs_process_instance = '' 
+      do 1020-Ask-Values 
+  else
+      do 1010-Get-Values
+  end-if
+  
+  #debug show '<-- 1000-Init-Report'
+end-procedure 1000-Init-Report
+
+
+!************************************************************************
+begin-procedure 1010-Get-Values
+!************************************************************************
+ 
+
+end-procedure 1010-Get-Values
+
+
+!************************************************************************
+begin-procedure 1020-Ask-Values
+!************************************************************************
+ 
+  input $fieldnamein maxlen=30 'Enter Field Name'  type = char
+  show 'Field Type is not required, but if using wildcards in fieldname then specifying type is suggested to avoid data type errors.'
+  show '0=Character, 1=Long, 2=Number, 3=Signed, 4=Date. Leave blank to skip.'
+  input $fieldtypein maxlen=1  'Enter Field Type'  type = char
+  input $fieldvalue  maxlen=30 'Enter Field Value' type = char
+  show ' '
+
+!   0 = Character                                                       *
+!   1 = *Long Character                                                 *
+!   2 = Number                                                          *
+!   3 = Signed Number                                                   *
+!   4 = *Date                                                           *
+  
+end-procedure 1020-Ask-Values
+
+
+!************************************************************************
+begin-procedure 2000-Process-Main
+!************************************************************************
+  show '--> 2000-Process-Main'
+  
+  let $fieldnamein = upper($fieldnamein)
+  if isnull($fieldtypein) or isblank($fieldtypein)
+    let $fieldtypein = '%'
+  end-if
+  let $fieldvalue = upper($fieldvalue)
+  let #rec-count = 0
+  let #rec-found = 0
+  
+BEGIN-SELECT
+RF.RECNAME 
+RF.FIELDNAME
+RD.SQLTABLENAME
+
+  let $recname = &RF.RECNAME
+  let $real_fieldname = &RF.FIELDNAME
+  let $skip_rec = 'N'
+  
+  if isblank(&RD.SQLTABLENAME)
+    let $from_rec = 'PS_' || $recname
+  else 
+    let $from_rec = &RD.SQLTABLENAME
+  end-if
+  let $from_rec_full = 'SYSADM.' || $from_rec
+  
+  if $skip_rec = 'Y'
+    show 'Unable to check ' $recname
+  else
+    do 2100-Select-From-Rec
+  end-if
+  
+  let #rec-count = #rec-count + 1
+
+FROM SYSADM.PSRECFIELDDB RF, SYSADM.PSRECDEFN RD, SYSADM.PSDBFIELD F
+WHERE RF.FIELDNAME LIKE $fieldnamein
+AND RD.RECNAME = RF.RECNAME
+AND RD.RECTYPE IN (0)  !only check SQL Tables
+AND RF.FIELDNAME = F.FIELDNAME
+AND F.FIELDTYPE LIKE $fieldtypein
+AND (F.LENGTH + F.DECIMALPOS + 2) >= LENGTH($fieldvalue)
+ORDER BY RF.RECNAME, RF.FIELDNAME
+END-SELECT
+
+  show '<-- 2000-Process-Main'
+end-procedure 2000-Process-Main
+
+
+!************************************************************************
+begin-procedure 2100-Select-From-Rec
+!************************************************************************
+  
+BEGIN-SELECT on-error=9900-SQL-error
+COUNT($real_fieldname)  &COUNT 
+  
+  move &COUNT to #count_num
+  
+  if #count_num > 0 
+  
+    move &COUNT to $count_out
+    let $count_out = edit($count_out,'888888')
+    
+    show $from_rec '.' $real_fieldname ',   ' $recname ',   ' $real_fieldname ',   ' $count_out ' rows'
+  
+    let $line_out = $from_rec || ',' || $real_fieldname || ',' || '' || ',' || '' || ',' || $count_out
+    write 10 from $line_out
+  
+    let #rec-found = #rec-found + 1
+  end-if
+
+FROM  [$from_rec_full]
+WHERE UPPER([$real_fieldname]) like $fieldvalue
+END-SELECT
+
+end-procedure 2100-Select-From-Rec
+
+
+!************************************************************************
+begin-procedure 8000-Get-Dbname
+!************************************************************************
+
+  Evaluate $sqr-database
+
+  When = 'ORACLE'  ! ORACLE Database handling  
+  
+BEGIN-SELECT
+NAME
+
+  let $Dbname = &NAME 
+
+FROM v$database
+END-SELECT
+
+  When = 'ODBC'  !SQL Server or Other ODBC
+  
+  ! need to fill in code !
+  
+  When-other
+    let $Dbname = 'unknowndb'
+  end-evaluate
+
+end-procedure 8000-Get-Dbname
+
+
+!************************************************************************
+begin-procedure 9900-SQL-error
+!************************************************************************
+  
+  show 'Error checking record ' $recname ' --- ' $sql-error
+
+end-procedure 9900-SQL-error
+
+
+!***********************************************************************
+begin-procedure 9999-Terminate
+!***********************************************************************
+  #debug show '9999-Terminate'
+        
+  !do Get-Current-Datetime
+  
+  let $rec-count = edit(#rec-count, '888888888')
+  let $rec-found = edit(#rec-found, '888888888')
+  
+  show ' '
+  show 'Records Attempted:       ' $rec-count
+  show 'Records Containing Data: ' $rec-found
+  show ' '
+  
+  let $ReportEndDate = datetostr(datenow(),'mm/dd/yyyy')
+  let $ReportEndTime = datetostr(datenow(),'HH24:MI:SS')
+  show ' '
+  show $ReportID ' started at: ' $ReportDate ' ' $ReportTime
+  show $ReportID ' ended at:   ' $ReportEndDate ' ' $ReportEndTime
+ 
+  !do StdAPI-Term
+
+end-procedure 9999-Terminate
+!***********************************************************************
+
+!***************************************************************
+!Included SQCs
+!***************************************************************
+! PeopleSoft SQCs:
+!#include 'reset.sqc'     !Reset printer procedure
+!#include 'curdttim.sqc'  !Get-Current-DateTime procedure
+!#include 'datetime.sqc'  !Routines for date and time formatting
+!#include 'datemath.sqc'  !Routines for date calculation
+!#include 'number.sqc'    !Routines to format numbers
+!#include 'prcsdef.sqc'   !Process Definition
+!#include 'prcsapi.sqc'   !Process Scheduler API
+!#include 'stdapi.sqc'    
+!#include 'readxlat.sqc'  !Process XLAT values
