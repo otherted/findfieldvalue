@@ -119,6 +119,7 @@ end-procedure 1000-Init-Report
 begin-procedure 1010-Get-Values
 !************************************************************************
  
+ !if used online then add code to select from run control tables
 
 end-procedure 1010-Get-Values
 
@@ -127,6 +128,7 @@ end-procedure 1010-Get-Values
 begin-procedure 1020-Ask-Values
 !************************************************************************
  
+  !input $tabownerin  maxlen=50 'Enter Table Owner/Schema' type char
   input $fieldnamein maxlen=30 'Enter Field Name'  type = char
   show 'Field Type is not required, but if using wildcards in fieldname then specifying type is suggested to avoid data type errors.'
   show '0=Character, 1=Long, 2=Number, 3=Signed, 4=Date. Leave blank to skip.'
@@ -149,10 +151,17 @@ begin-procedure 2000-Process-Main
   show '--> 2000-Process-Main'
   
   let $fieldnamein = upper($fieldnamein)
+  if isblank($fieldnamein) 
+    let $fieldnamein = '%'
+  end-if
   if isnull($fieldtypein) or isblank($fieldtypein)
     let $fieldtypein = '%'
   end-if
   let $fieldvalue = upper($fieldvalue)
+  if isblank($fieldvalue)
+    let $fieldvalue = '%'
+  end-if
+  
   let #rec-count = 0
   let #rec-found = 0
   
@@ -170,7 +179,7 @@ RD.SQLTABLENAME
   else 
     let $from_rec = &RD.SQLTABLENAME
   end-if
-  let $from_rec_full = 'SYSADM.' || $from_rec
+  let $from_rec_full = $tabowner || '.' || $from_rec
   
   if $skip_rec = 'Y'
     show 'Unable to check ' $recname
@@ -180,13 +189,14 @@ RD.SQLTABLENAME
   
   let #rec-count = #rec-count + 1
 
-FROM SYSADM.PSRECFIELDDB RF, SYSADM.PSRECDEFN RD, SYSADM.PSDBFIELD F
+FROM [$tabowner].PSRECFIELDDB RF, [$tabowner].PSRECDEFN RD, [$tabowner].PSDBFIELD F
 WHERE RF.FIELDNAME LIKE $fieldnamein
 AND RD.RECNAME = RF.RECNAME
 AND RD.RECTYPE IN (0)  !only check SQL Tables
 AND RF.FIELDNAME = F.FIELDNAME
 AND F.FIELDTYPE LIKE $fieldtypein
-AND (F.LENGTH + F.DECIMALPOS + 2) >= LENGTH($fieldvalue)
+AND F.FIELDTYPE <> 8  !exclude IMAGE fields which are binary BLOB
+AND ((F.LENGTH + F.DECIMALPOS + 2) >= LENGTH($fieldvalue)) OR F.LENGTH = 0
 ORDER BY RF.RECNAME, RF.FIELDNAME
 END-SELECT
 
@@ -227,6 +237,17 @@ end-procedure 2100-Select-From-Rec
 begin-procedure 8000-Get-Dbname
 !************************************************************************
 
+BEGIN-SELECT
+DBNAME
+OWNERID
+
+  let $Dbname = &DBNAME
+  let $tabowner = &OWNERID
+
+FROM PSDBOWNER
+END-SELECT
+
+
   Evaluate $sqr-database
 
   When = 'ORACLE'  ! ORACLE Database handling  
@@ -238,15 +259,24 @@ NAME
 
 FROM v$database
 END-SELECT
-
-  When = 'ODBC'  !SQL Server or Other ODBC
   
-  ! need to fill in code !
+  When = 'ODBC'
+    ! add specific needs for SQL Server or other ODBC
   
   When-other
-    let $Dbname = 'unknowndb'
+    ! add specific needs for other databases
+
   end-evaluate
 
+  if isblank($Dbname)
+    ! this is only for logging and feedback, just say unknown
+    $Dbname = 'unknowndb'
+  end-if
+  if isblank($tabowner)
+    ! default to SYSADM
+    $tabowner = 'SYSADM'
+  end-if
+  
 end-procedure 8000-Get-Dbname
 
 
