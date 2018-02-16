@@ -29,12 +29,12 @@ SQL Developer:
   
  - Field Value: Value to search for, can use % wildcard 
 
- - Return Detail Values: Yes (Y) or No (N)
-    - Yes - Return each distinct variation of the search value that is
-            found, includes count of how many times that value exists.
-            Not possible on records with LONG columns so those will
-            default to only summary output.
-    - No - Only count the instances of the search value that are found
+ - Return Detail Values: 
+    - Y (Yes) = Return each distinct variation of the search value that is
+                found, includes count of how many times that value exists.
+                Not possible on records with LONG columns so those will
+                default to only summary output.
+    - N (No) = Only count the instances of the search value that are found
 
   The option to return each distinct variation of the search value found in the tables is done using a GROUP BY clause and provides much more detailed data, but the program will run much slower. Use with caution for large searches.
   
